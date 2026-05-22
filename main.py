@@ -2,8 +2,8 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 from datetime import datetime, timedelta
-from yahooquery import Screener
 import json
+import time
 
 app = FastAPI()
 
@@ -14,62 +14,90 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==================== OBTENER TODAS LAS CRIPTOMONEDAS REALES ====================
+# ==================== OBTENER TODAS LAS CRIPTOMONEDAS CON PRECIO ====================
+def get_all_cryptos_with_price():
+    """Detecta automáticamente todas las criptomonedas con precio en Yahoo Finance"""
+    print("🔄 Escaneando todas las criptomonedas en Yahoo Finance...")
+    
+    # Lista extensa de posibles criptomonedas (combinación de símbolos comunes)
+    crypto_symbols_base = [
+        # TOP 100 por market cap
+        "BTC", "ETH", "USDT", "BNB", "XRP", "USDC", "SOL", "ADA", "DOGE", "TRX",
+        "AVAX", "SHIB", "DOT", "LINK", "MATIC", "LTC", "BCH", "NEAR", "UNI", "ATOM",
+        "ETC", "XLM", "ICP", "FIL", "APT", "HBAR", "ARB", "VET", "QNT", "MKR",
+        "RNDR", "GRT", "AAVE", "ALGO", "EGLD", "SAND", "MANA", "GALA", "AXS", "EOS",
+        "XTZ", "KSM", "ZEC", "DASH", "FLR", "ENJ", "CHZ", "CRO", "FTM", "THETA",
+        "SNX", "SUSHI", "YFI", "COMP", "BAT", "ZIL", "NEO", "ONT", "OMG", "WAVES",
+        "KAVA", "RUNE", "ONE", "STX", "ANKR", "CRV", "1INCH", "CELO", "BAL", "BAND",
+        "KLAY", "MINA", "OSMO", "QTUM", "REN", "SKL", "ALICE", "AUDIO", "BNT", "C98",
+        "CTSI", "DYDX", "ENS", "FET", "FLOW", "GNO", "HNT", "ILV", "KNC", "LDO",
+        "LRC", "MASK", "OCEAN", "PEOPLE", "REQ", "RLY", "STORJ", "SUPER", "SYN", "UMA",
+        # Criptos adicionales
+        "ACH", "AGLD", "ALPHA", "API3", "AR", "ASM", "AST", "BADGER", "BICO", "BLZ",
+        "CVC", "DENT", "DESO", "DKA", "DYDX", "ELA", "ERN", "FARM", "FORTH", "FOX",
+        "GTC", "GUSD", "ICP", "IDEX", "INJ", "IOTX", "JASMY", "JOE", "KRL", "LIT",
+        "LOKA", "MAGIC", "MATH", "MDT", "MEDIA", "METIS", "MIR", "MKR", "MLN", "MNDE",
+        "MOB", "MXC", "MYTH", "NKN", "NMR", "NULS", "OXT", "PHA", "PUNDIX", "PYR",
+        "RAD", "RAY", "RBN", "RLC", "ROSE", "RSR", "SGB", "SKL", "SLP", "SPELL",
+        "SUI", "SUPER", "SXP", "TRB", "TRIBE", "TWT", "UMA", "UNFI", "VTHO", "WOO"
+    ]
+    
+    all_cryptos = []
+    verified_cryptos = []
+    
+    print(f"📊 Verificando {len(crypto_symbols_base)} posibles criptomonedas...")
+    
+    for i, base_symbol in enumerate(crypto_symbols_base):
+        symbol = f"{base_symbol}-USD"
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1d", progress=False)
+            
+            if not hist.empty:
+                last_price = hist['Close'].iloc[-1]
+                if last_price and last_price > 0:
+                    verified_cryptos.append(symbol)
+                    print(f"✅ {i+1}/{len(crypto_symbols_base)}: {symbol} - ${last_price:.4f}")
+                else:
+                    print(f"⚠️ {i+1}/{len(crypto_symbols_base)}: {symbol} - sin precio")
+            else:
+                print(f"❌ {i+1}/{len(crypto_symbols_base)}: {symbol} - no encontrada")
+                
+        except Exception as e:
+            print(f"❌ {i+1}/{len(crypto_symbols_base)}: {symbol} - error")
+        
+        # Pequeña pausa para no sobrecargar la API
+        if (i + 1) % 10 == 0:
+            time.sleep(0.5)
+    
+    print(f"\n✅ TOTAL CRIPTOMONEDAS CON PRECIO: {len(verified_cryptos)}")
+    
+    # Guardar lista completa en archivo
+    with open('all_cryptos_with_price.json', 'w') as f:
+        json.dump(verified_cryptos, f, indent=2)
+    
+    # Si no encontró ninguna, usar lista de respaldo
+    if len(verified_cryptos) == 0:
+        print("⚠️ No se encontraron criptos, usando lista de respaldo")
+        return get_backup_cryptos()
+    
+    return verified_cryptos
+
 def get_backup_cryptos():
-    """Lista de respaldo de las criptomonedas más importantes"""
+    """Lista de respaldo de las criptomonedas principales"""
     return [
         "BTC-USD", "ETH-USD", "USDT-USD", "BNB-USD", "SOL-USD",
         "XRP-USD", "USDC-USD", "ADA-USD", "DOGE-USD", "TRX-USD",
         "AVAX-USD", "SHIB-USD", "DOT-USD", "LINK-USD", "MATIC-USD",
         "LTC-USD", "BCH-USD", "NEAR-USD", "UNI-USD", "ATOM-USD",
         "ETC-USD", "XLM-USD", "ICP-USD", "FIL-USD", "APT-USD",
-        "HBAR-USD", "ARB-USD", "VET-USD", "QNT-USD", "MKR-USD",
-        "RNDR-USD", "GRT-USD", "AAVE-USD", "ALGO-USD", "EGLD-USD"
+        "HBAR-USD", "ARB-USD", "VET-USD", "QNT-USD", "MKR-USD"
     ]
 
-def get_all_cryptos_from_yahoo():
-    """Obtiene TODAS las criptomonedas disponibles en Yahoo Finance usando yahooquery"""
-    try:
-        print("🔄 Obteniendo todas las criptomonedas de Yahoo Finance...")
-        s = Screener()
-        all_cryptos = []
-        seen = set()
-        
-        # Intentar obtener sin paginación
-        try:
-            data = s.get_screeners('all_cryptocurrencies_us')
-            quotes = data.get('all_cryptocurrencies_us', {}).get('quotes', [])
-            
-            for quote in quotes:
-                symbol = quote.get('symbol', '')
-                if symbol and symbol.endswith('-USD') and symbol not in seen:
-                    seen.add(symbol)
-                    all_cryptos.append(symbol)
-            
-            print(f"✅ Obtenidas {len(all_cryptos)} criptomonedas")
-            
-        except Exception as e:
-            print(f"❌ Error con método simple: {e}")
-            return get_backup_cryptos()
-        
-        if len(all_cryptos) == 0:
-            print("⚠️ No se encontraron criptomonedas, usando lista de respaldo")
-            return get_backup_cryptos()
-        
-        print(f"✅ TOTAL CRIPTOMONEDAS ENCONTRADAS: {len(all_cryptos)}")
-        
-        # Guardar en archivo para debug
-        with open('all_cryptos_debug.json', 'w') as f:
-            json.dump(all_cryptos, f, indent=2)
-        
-        return all_cryptos
-        
-    except Exception as e:
-        print(f"❌ Error obteniendo criptos con yahooquery: {e}")
-        return get_backup_cryptos()
-
-# Obtener TODAS las criptomonedas
-CRYPTOS = get_all_cryptos_from_yahoo()
+# Ejecutar la detección de criptos
+print("🚀 Iniciando API - Detectando criptomonedas...")
+CRYPTOS = get_all_cryptos_with_price()
+print(f"📊 Finalizado: {len(CRYPTOS)} criptomonedas disponibles")
 
 # ==================== ACCIONES ====================
 STOCKS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "META", "NFLX"]
@@ -80,26 +108,15 @@ SYMBOLS = STOCKS + CRYPTOS
 # Nombres legibles
 def generate_crypto_name(symbol):
     """Genera un nombre legible para la criptomoneda"""
+    symbol_clean = symbol.replace('-USD', '')
     name_map = {
-        "BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "USDT-USD": "Tether",
-        "BNB-USD": "BNB", "SOL-USD": "Solana", "XRP-USD": "Ripple",
-        "USDC-USD": "USD Coin", "ADA-USD": "Cardano", "DOGE-USD": "Dogecoin",
-        "TRX-USD": "TRON", "AVAX-USD": "Avalanche", "SHIB-USD": "Shiba Inu",
-        "DOT-USD": "Polkadot", "LINK-USD": "Chainlink", "MATIC-USD": "Polygon",
-        "LTC-USD": "Litecoin", "BCH-USD": "Bitcoin Cash", "NEAR-USD": "NEAR Protocol",
-        "UNI-USD": "Uniswap", "ATOM-USD": "Cosmos", "ETC-USD": "Ethereum Classic",
-        "XLM-USD": "Stellar", "ICP-USD": "Internet Computer", "FIL-USD": "Filecoin",
-        "APT-USD": "Aptos", "HBAR-USD": "Hedera", "ARB-USD": "Arbitrum",
-        "VET-USD": "VeChain", "QNT-USD": "Quant", "MKR-USD": "Maker",
-        "RNDR-USD": "Render", "GRT-USD": "The Graph", "AAVE-USD": "Aave",
-        "ALGO-USD": "Algorand", "EGLD-USD": "MultiversX"
+        "BTC": "Bitcoin", "ETH": "Ethereum", "USDT": "Tether", "BNB": "BNB",
+        "SOL": "Solana", "XRP": "Ripple", "USDC": "USD Coin", "ADA": "Cardano",
+        "DOGE": "Dogecoin", "TRX": "TRON", "AVAX": "Avalanche", "SHIB": "Shiba Inu",
+        "DOT": "Polkadot", "LINK": "Chainlink", "MATIC": "Polygon", "LTC": "Litecoin",
+        "BCH": "Bitcoin Cash", "NEAR": "NEAR Protocol", "UNI": "Uniswap", "ATOM": "Cosmos"
     }
-    
-    if symbol in name_map:
-        return name_map[symbol]
-    
-    name = symbol.replace('-USD', '').upper()
-    return name
+    return name_map.get(symbol_clean, symbol_clean)
 
 # Construir SYMBOL_NAMES
 SYMBOL_NAMES = {
@@ -157,7 +174,7 @@ async def get_price(symbol: str):
 async def get_all_prices():
     """Obtiene todos los precios actuales - Formato para el frontend"""
     results = {}
-    for symbol in SYMBOLS[:50]:  # Limitamos a 50 para performance
+    for symbol in SYMBOLS[:100]:  # Limitamos a 100 para performance
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="2d")
@@ -167,23 +184,6 @@ async def get_all_prices():
                     "price": round(float(price), 2),
                     "name": SYMBOL_NAMES.get(symbol, symbol)
                 }
-            else:
-                results[symbol] = None
-        except Exception as e:
-            results[symbol] = None
-    return results
-
-@app.get("/api/prices/simple")
-async def get_all_prices_simple():
-    """Obtiene todos los precios actuales - Formato simple (solo números)"""
-    results = {}
-    for symbol in SYMBOLS[:50]:
-        try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="2d")
-            if not hist.empty:
-                price = hist['Close'].iloc[-1]
-                results[symbol] = round(float(price), 2)
             else:
                 results[symbol] = None
         except Exception as e:
