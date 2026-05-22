@@ -3,6 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import yfinance as yf
 from datetime import datetime, timedelta
 
+import yahoo_finance_symbols as ys
+
+# Obtener todos los símbolos y filtrar por criptos
+all_symbols = ys.get_symbols()  # Más de 200,000 símbolos
+cryptos = [s for s in all_symbols if s.endswith('-USD')]
+
 app = FastAPI()
 
 app.add_middleware(
