@@ -35,7 +35,7 @@ def get_all_cryptos_from_yahoo():
         all_cryptos = []
         seen = set()
         
-        # Intentar obtener sin paginación (versión simple)
+        # Intentar obtener sin paginación
         try:
             data = s.get_screeners('all_cryptocurrencies_us')
             quotes = data.get('all_cryptocurrencies_us', {}).get('quotes', [])
@@ -50,7 +50,6 @@ def get_all_cryptos_from_yahoo():
             
         except Exception as e:
             print(f"❌ Error con método simple: {e}")
-            # Si falla, usar lista de respaldo
             return get_backup_cryptos()
         
         if len(all_cryptos) == 0:
@@ -156,8 +155,9 @@ async def get_price(symbol: str):
 
 @app.get("/api/prices")
 async def get_all_prices():
+    """Obtiene todos los precios actuales - Formato para el frontend"""
     results = {}
-    for symbol in SYMBOLS:
+    for symbol in SYMBOLS[:50]:  # Limitamos a 50 para performance
         try:
             ticker = yf.Ticker(symbol)
             hist = ticker.history(period="2d")
@@ -167,6 +167,23 @@ async def get_all_prices():
                     "price": round(float(price), 2),
                     "name": SYMBOL_NAMES.get(symbol, symbol)
                 }
+            else:
+                results[symbol] = None
+        except Exception as e:
+            results[symbol] = None
+    return results
+
+@app.get("/api/prices/simple")
+async def get_all_prices_simple():
+    """Obtiene todos los precios actuales - Formato simple (solo números)"""
+    results = {}
+    for symbol in SYMBOLS[:50]:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="2d")
+            if not hist.empty:
+                price = hist['Close'].iloc[-1]
+                results[symbol] = round(float(price), 2)
             else:
                 results[symbol] = None
         except Exception as e:
