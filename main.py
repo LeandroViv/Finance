@@ -21,8 +21,7 @@ app.add_middleware(
 # Si deployás el aggregator en Render, va a ser algo como:
 # AGGREGATOR_URL = "https://crypto-aggregator.onrender.com"
 # Por ahora usamos la demo pública, pero te recomiendo deployar el tuyo propio
-AGGREGATOR_URL = "https://crypto-data-aggregator.onrender.com"  # Demo pública (cambiala después)
-
+AGGREGATOR_URL = "https://crypto-aggregator.onrender.com"  # <-- TU URL
 # Cache en memoria para no llamar al aggregator todo el tiempo
 crypto_cache = {
     "data": [],
