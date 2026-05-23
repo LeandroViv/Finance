@@ -33,69 +33,87 @@ SYMBOL_NAMES = {
     "META": "Meta", "NFLX": "Netflix",
 }
 
-# ==================== FUNCIONES MCP ====================
+# ==================== FUNCIÓN QUE TRAE TODAS LAS CRIPTOMONEDAS (PAGINACIÓN) ====================
 def get_cached_cryptos(force_refresh=False):
-    """Obtiene criptomonedas del MCP Aggregator con cache"""
+    """Obtiene TODAS las criptomonedas del MCP Aggregator con paginación"""
     now = time.time()
     
     if force_refresh or (now - crypto_cache["timestamp"] > crypto_cache["ttl"]) or not crypto_cache["data"]:
-        print("🔄 Actualizando cache desde MCP Aggregator...")
+        print("🔄 Actualizando cache desde MCP Aggregator (pagando todas las páginas)...")
+        
+        all_cryptos = []
+        page = 1
+        per_page = 250  # Máximo permitido por página
+        max_pages = 40   # 40 páginas x 250 = 10,000 criptomonedas
+        
         try:
-            # Obtener market overview (top 250 por market cap)
-            payload = {
-                "jsonrpc": "2.0",
-                "method": "tools/call",
-                "params": {
-                    "name": "get_market_overview",
-                    "arguments": {
-                        "vs_currency": "usd",
-                        "per_page": 250
-                    }
-                },
-                "id": 1
-            }
-            
-            response = requests.post(MCP_URL, json=payload, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            
-            # Procesar la respuesta del MCP
-            cryptos_list = []
-            if "result" in data and "content" in data["result"]:
-                content = data["result"]["content"]
-                # El content puede venir como texto o como lista
-                if isinstance(content, list) and len(content) > 0:
-                    # Intentar parsear como JSON
-                    import json as json_lib
-                    try:
-                        coins = json_lib.loads(content[0].get("text", "[]"))
-                        for coin in coins:
-                            cryptos_list.append({
-                                "symbol": f"{coin.get('symbol', '').upper()}-USD",
-                                "name": coin.get('name', ''),
-                                "price": coin.get('current_price', 0),
-                                "market_cap": coin.get('market_cap', 0),
-                                "volume_24h": coin.get('total_volume', 0),
-                                "percent_change_24h": coin.get('price_change_percentage_24h', 0),
-                                "rank": coin.get('market_cap_rank', len(cryptos_list) + 1)
-                            })
-                    except:
-                        pass
-            
-            if cryptos_list:
-                crypto_cache["data"] = cryptos_list
-                crypto_cache["timestamp"] = now
-                print(f"✅ Cache actualizado con {len(cryptos_list)} criptomonedas")
-            else:
-                # Fallback a CoinGecko si el MCP no responde bien
-                crypto_cache["data"] = get_fallback_cryptos()
-                crypto_cache["timestamp"] = now
+            while page <= max_pages:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "method": "tools/call",
+                    "params": {
+                        "name": "get_market_overview",
+                        "arguments": {
+                            "vs_currency": "usd",
+                            "per_page": per_page,
+                            "page": page
+                        }
+                    },
+                    "id": 1
+                }
+                
+                print(f"📡 Solicitando página {page}...")
+                response = requests.post(MCP_URL, json=payload, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Procesar la respuesta
+                cryptos_page = []
+                if "result" in data and "content" in data["result"]:
+                    content = data["result"]["content"]
+                    if isinstance(content, list) and len(content) > 0:
+                        try:
+                            coins = json.loads(content[0].get("text", "[]"))
+                            for coin in coins:
+                                cryptos_page.append({
+                                    "symbol": f"{coin.get('symbol', '').upper()}-USD",
+                                    "name": coin.get('name', ''),
+                                    "price": coin.get('current_price', 0),
+                                    "market_cap": coin.get('market_cap', 0),
+                                    "volume_24h": coin.get('total_volume', 0),
+                                    "percent_change_24h": coin.get('price_change_percentage_24h', 0),
+                                    "rank": coin.get('market_cap_rank', len(all_cryptos) + 1)
+                                })
+                        except json.JSONDecodeError:
+                            pass
+                
+                # Si no hay resultados en esta página, terminamos
+                if not cryptos_page:
+                    print(f"📄 Página {page}: sin resultados, finalizando...")
+                    break
+                
+                all_cryptos.extend(cryptos_page)
+                print(f"📄 Página {page}: +{len(cryptos_page)} criptos (total acumulado: {len(all_cryptos)})")
+                
+                # Si recibimos menos de per_page, es la última página
+                if len(cryptos_page) < per_page:
+                    print("📄 Última página alcanzada")
+                    break
+                    
+                page += 1
+                time.sleep(0.3)  # Pequeña pausa para no sobrecargar
                 
         except Exception as e:
-            print(f"❌ Error MCP: {e}")
-            if not crypto_cache["data"]:
-                crypto_cache["data"] = get_fallback_cryptos()
-                crypto_cache["timestamp"] = now
+            print(f"❌ Error en paginación: {e}")
+        
+        if all_cryptos:
+            crypto_cache["data"] = all_cryptos
+            crypto_cache["timestamp"] = now
+            print(f"✅ ✅ ✅ CACHE ACTUALIZADO CON {len(all_cryptos)} CRIPTOMONEDAS TOTALES")
+        else:
+            print("⚠️ No se obtuvieron criptos del MCP, usando fallback")
+            crypto_cache["data"] = get_fallback_cryptos()
+            crypto_cache["timestamp"] = now
     
     return crypto_cache["data"]
 
@@ -106,7 +124,7 @@ def get_fallback_cryptos():
         params = {
             'vs_currency': 'usd',
             'order': 'market_cap_desc',
-            'per_page': 100,
+            'per_page': 250,
             'page': 1,
             'sparkline': 'false'
         }
@@ -135,19 +153,20 @@ def get_backup_cryptos():
         {"symbol": "ETH-USD", "name": "Ethereum", "price": 3500, "market_cap": 420000000000, "volume_24h": 15000000000, "percent_change_24h": 1.8, "rank": 2},
         {"symbol": "SOL-USD", "name": "Solana", "price": 180, "market_cap": 80000000000, "volume_24h": 3000000000, "percent_change_24h": 5.2, "rank": 5},
         {"symbol": "XRP-USD", "name": "Ripple", "price": 0.6, "market_cap": 33000000000, "volume_24h": 1500000000, "percent_change_24h": -0.5, "rank": 7},
+        {"symbol": "ADA-USD", "name": "Cardano", "price": 0.45, "market_cap": 16000000000, "volume_24h": 400000000, "percent_change_24h": 3.2, "rank": 10},
     ]
 
-# ==================== ENDPOINTS (igual que antes) ====================
+# ==================== ENDPOINTS ====================
 @app.get("/")
 async def root():
     cryptos = get_cached_cryptos()
     return {
-        "message": "Inversor API con MCP Crypto Data Aggregator",
+        "message": "Inversor API con MCP Crypto Data Aggregator - TODAS las criptomonedas",
         "total_cryptos": len(cryptos),
         "total_stocks": len(STOCKS),
         "total_symbols": len(STOCKS) + len(cryptos),
         "sample_cryptos": [c["symbol"] for c in cryptos[:20]],
-        "data_source": "MCP Aggregator (10,000+ coins)"
+        "data_source": "MCP Aggregator (10,000+ coins paginado)"
     }
 
 @app.get("/api/health")
@@ -159,7 +178,7 @@ async def get_symbols():
     cryptos = get_cached_cryptos()
     all_symbols = STOCKS + [c["symbol"] for c in cryptos]
     return {
-        "symbols": all_symbols[:200],
+        "symbols": all_symbols[:500],
         "count": len(all_symbols),
         "cryptos_count": len(cryptos),
         "stocks_count": len(STOCKS)
@@ -257,7 +276,7 @@ async def get_historical(symbol: str = Query(...), days: int = Query(60)):
             pass
         return {"symbol": symbol, "prices": [], "count": 0}
     
-    # Para criptos, usar CoinGecko fallback o MCP si tiene histórico
+    # Para criptos, usar CoinGecko
     try:
         coin_id = symbol.replace("-USD", "").lower()
         url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart"
@@ -284,7 +303,7 @@ async def get_all_cryptos_symbols():
     return {
         "cryptos": [c["symbol"] for c in cryptos],
         "count": len(cryptos),
-        "source": "MCP Aggregator"
+        "source": "MCP Aggregator (paginado - todas las páginas)"
     }
 
 @app.get("/api/top")
@@ -298,11 +317,12 @@ async def get_top_cryptos(limit: int = 50):
 @app.post("/api/refresh-cache")
 async def refresh_cache():
     get_cached_cryptos(force_refresh=True)
-    return {"status": "ok", "message": "Cache actualizado"}
+    return {"status": "ok", "message": "Cache actualizado con todas las criptomonedas"}
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 INICIANDO API CON MCP AGGREGATOR...")
+    print("🚀 INICIANDO API CON MCP AGGREGATOR (paginación completa)...")
+    print("📡 Cargando todas las criptomonedas (puede tomar ~30 segundos la primera vez)...")
     get_cached_cryptos()
     print(f"✅ API lista en http://0.0.0.0:10000")
     uvicorn.run(app, host="0.0.0.0", port=10000)
